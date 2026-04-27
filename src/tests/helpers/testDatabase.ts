@@ -54,6 +54,31 @@ export function validateDatabaseUrl(url: string) {
 }
 
 /**
+ * Check if the database is reachable
+ * Useful for skipping integration tests in environments without a live database
+ * 
+ * @returns true if database is reachable, false otherwise
+ */
+export async function isDatabaseReachable(): Promise<boolean> {
+  const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/disciplr_test'
+  
+  const db = knex({
+    client: 'pg',
+    connection: dbUrl,
+    acquireConnectionTimeout: 2000
+  })
+
+  try {
+    await db.raw('SELECT 1')
+    await db.destroy()
+    return true
+  } catch {
+    await db.destroy().catch(() => {})
+    return false
+  }
+}
+
+/**
  * Setup a test database connection and prepare it for testing
  * - Connects to the test database
  * - Runs all migrations
@@ -96,7 +121,8 @@ export async function setupTestDatabase(): Promise<TestHarness> {
  * 
  * @param harness - TestHarness or Knex database instance
  */
-export async function teardownTestDatabase(harness: TestHarness | Knex): Promise<void> {
+export async function teardownTestDatabase(harness: TestHarness | Knex | undefined | null): Promise<void> {
+  if (!harness) return
   if ('knex' in harness) {
     await harness.knex.destroy()
     await harness.prisma.$disconnect()

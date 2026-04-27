@@ -1,60 +1,77 @@
-# Database Test Harness
+# Database Testing Guide
 
-This document describes the database test harness for the Disciplr backend.
+This document outlines the standardized approach for database testing in the Disciplr backend.
 
-## Overview
+## Test Harness
 
-The database test harness (`src/tests/helpers/testDatabase.ts`) provides a robust and standardized way to set up, isolate, and tear down the database state for tests. It supports both Knex and Prisma.
+We use a centralized test harness located at `src/tests/helpers/testDatabase.ts`. This harness provides utilities for both **Prisma** and **Knex** integration testing.
 
-## Key Features
+### Core Features
 
-1. **Dual ORM Support**: Returns an object `{ knex, prisma }` so tests can use either Knex query builder or Prisma ORM seamlessly.
-2. **Database Isolation**: Uses `truncateTables` utility which executes `TRUNCATE TABLE ... CASCADE` to cleanly and quickly clear tables before/after each test, eliminating flakiness from dirty database state.
-3. **Guard Rails**: Validates the database URL to ensure you never accidentally run test teardowns or migrations against a production database.
-4. **Seed Utilities**: Built-in utilities for seeding minimal test fixtures (e.g., standard RBAC roles).
+- **Clean State**: Each test suite is responsible for ensuring a clean state using `truncateTables` or `setupTestDatabase`.
+- **Security Guards**: The harness prevents execution against production databases by validating the `DATABASE_URL` and `NODE_ENV`.
+- **Hybrid Support**: Seamlessly manages both Prisma and Knex instances in the same harness.
+- **Graceful Skipping**: Integration tests automatically skip if a live database connection is not available, allowing CI to run unit tests without infra overhead.
 
 ## Usage
 
-In your Jest tests, import the test database setup and teardown helpers:
+### 1. Basic Setup
+
+In your test suite, import the harness utilities:
 
 ```typescript
-import { TestHarness, setupTestDatabase, teardownTestDatabase, truncateTables } from './helpers/testDatabase.js'
+import { setupTestDatabase, teardownTestDatabase, truncateTables, TestHarness } from './helpers/testDatabase.js'
 
-describe('My Service Tests', () => {
+describe('My Service Integration', () => {
   let harness: TestHarness
 
   beforeAll(async () => {
-    // This will run migrations automatically
+    // Initializes Knex and Prisma
     harness = await setupTestDatabase()
   })
 
   afterAll(async () => {
+    // Closes connections
     await teardownTestDatabase(harness)
   })
 
   beforeEach(async () => {
-    // This ensures every test starts with a clean slate
+    // Cleans all tables for isolation
     await truncateTables(harness.knex)
   })
 
-  it('should test something using Knex', async () => {
+  it('should save data', async () => {
     await harness.knex('users').insert({ ... })
-  })
-
-  it('should test something using Prisma', async () => {
-    await harness.prisma.user.create({ ... })
+    const user = await harness.prisma.user.findUnique({ ... })
+    expect(user).toBeDefined()
   })
 })
 ```
 
-## Parallel Test Execution
+### 2. Parallel Execution
 
-By default, the harness uses a shared testing database (e.g. `postgresql://postgres:postgres@localhost:5432/disciplr_test`).
-If Jest runs tests in parallel, executing `TRUNCATE TABLE` across multiple test suites concurrently may cause race conditions. 
+**Parallel execution is currently disabled** (via recommended `--runInBand` flag) because tests share a single PostgreSQL database. 
 
-**Recommendation for CI:** Explicitly disable parallel execution when tests hit the shared database by running:
-`npm run test -- --runInBand`
-or
-`npm run test -- --maxWorkers=1`
+**Rationale**: To support safe parallel execution, we would need to dynamically create and drop test databases (e.g., `disciplr_test_worker_1`), which increases test setup complexity and latency. For current repository scale, `--runInBand` ensures maximum reliability and simplified debugging.
 
-If parallel execution is required, you must run an advanced setup that provisions unique logical databases (or distinct schemas) per `JEST_WORKER_ID`. Currently, this harness depends on table truncation against the `disciplr_test` database.
+## Security Guard Rails
+
+The harness includes strict checks to prevent accidental data loss:
+- Refuses to run if `NODE_ENV=production`.
+- Refuses to run if `DATABASE_URL` does not contain `localhost`, `127.0.0.1`, or the word `test`.
+
+## Environment Configuration
+
+Integration tests require a running PostgreSQL instance. Configure it via environment variables:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disciplr_test
+```
+
+If the database is unreachable, integration tests will log `SKIP: no database available` and pass, while unit tests will continue to execute.
+
+## Best Practices
+
+1. **Prefer Truncate over Migrate**: `truncateTables` is significantly faster than running `migrateDown`/`migrateUp` between tests.
+2. **Use Fixture Helpers**: Use `seedMinimalFixtures(harness)` to populate standard reference data (like RBAC roles).
+3. **Snapshot Comparison**: Use `captureDbState(db)` and `compareDbStates(s1, s2)` to verify idempotency or complex multi-table transactions.

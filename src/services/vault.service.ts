@@ -29,6 +29,20 @@ export class VaultService {
     }
   }
 
+  /**
+   * Retrieves a vault by its contract ID.
+   */
+  static async getVaultById(contractId: string): Promise<Vault | null> {
+    const query = 'SELECT * FROM vaults WHERE contract_id = $1;';
+    try {
+      const result = await pool.query(query, [contractId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error fetching vault:', error);
+      throw new Error('Database error during vault retrieval');
+    }
+  }
+
   static async initializePrisma() {
     try {
       if (process.env.DATABASE_URL) {
