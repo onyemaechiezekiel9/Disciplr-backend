@@ -198,56 +198,57 @@ function parseVaultPayload(
     // For vault events, we expect either an object or a direct vault ID
     const vaultId = typeof nativeVal === 'string' ? nativeVal : (nativeVal.vault_id || nativeVal.id || `vault_${Date.now()}`)
     
-    if (eventType === 'vault_created') {
-      const payload: VaultEventPayload = {
-        vaultId,
-        creator: nativeVal.creator || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-        amount: nativeVal.amount?.toString() || '0',
-        startTimestamp: nativeVal.start_date ? new Date(nativeVal.start_date * 1000) : new Date(),
-        endTimestamp: nativeVal.end_date ? new Date(nativeVal.end_date * 1000) : new Date(),
-        successDestination: nativeVal.success_destination || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-        failureDestination: nativeVal.failure_destination || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-        status: 'active'
+    switch (eventType) {
+      case 'vault_created': {
+        const payload: VaultEventPayload = {
+          vaultId,
+          creator: nativeVal.creator || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+          amount: nativeVal.amount?.toString() || '0',
+          startTimestamp: nativeVal.start_date ? new Date(nativeVal.start_date * 1000) : new Date(),
+          endTimestamp: nativeVal.end_date ? new Date(nativeVal.end_date * 1000) : new Date(),
+          successDestination: nativeVal.success_destination || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+          failureDestination: nativeVal.failure_destination || 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+          status: 'active'
+        }
+        const error = validateVaultCreatedPayload(payload)
+        if (error) {
+          console.error(`Vault created validation error: ${error}`)
+          return null
+        }
+
+        return payload;
       }
-      const error = validateVaultCreatedPayload(payload)
-      if (error) {
-        console.error(`Vault created validation error: ${error}`)
-        return null
-      }
 
-      return payload;
+      case 'vault_completed':
+      case 'vault_failed':
+      case 'vault_cancelled': {
+        const decoded = decodePayloadRecord(xdrData);
+        const payload: VaultEventPayload = {
+          vaultId: readStringField(decoded, 'vaultId') ?? '',
+          status: ((readStringField(decoded, 'status')) ?
+            eventType.replace('vault_', '') : undefined) as VaultEventPayload['status']
+        };
 
-    case 'vault_completed':
-    case 'vault_failed':
-    case 'vault_cancelled':
-      const decoded = decodePayloadRecord(xdrData);
-      payload = {
-        vaultId: readStringField(decoded, 'vaultId') ?? '',
-        status: ((readStringField(decoded, 'status')) ?
-          eventType.replace('vault_', '') : undefined) as VaultEventPayload['status']
-      };
-
-      {
         const statusError = validateVaultStatusPayload(payload)
         if (statusError) {
           console.error(`Vault status validation error: ${statusError}`)
           return null
         }
-        return payload
-      
-      default:
-      return payload
-    } else {
-      const payload: VaultEventPayload = {
-        vaultId,
-        status: (nativeVal.status || eventType.replace('vault_', '')) as VaultEventPayload['status']
+        return payload;
       }
-      const error = validateVaultStatusPayload(payload)
-      if (error) {
-        console.error(`Vault status validation error: ${error}`)
-        return null
+
+      default: {
+        const payload: VaultEventPayload = {
+          vaultId,
+          status: (nativeVal.status || eventType.replace('vault_', '')) as VaultEventPayload['status']
+        }
+        const error = validateVaultStatusPayload(payload)
+        if (error) {
+          console.error(`Vault status validation error: ${error}`)
+          return null
+        }
+        return payload;
       }
-      return payload
     }
   } catch (error) {
     console.error('Error parsing vault payload XDR:', error)
