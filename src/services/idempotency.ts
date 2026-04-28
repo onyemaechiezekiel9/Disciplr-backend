@@ -76,3 +76,33 @@ export class IdempotencyService {
     })
   }
 }
+
+// In-memory idempotency store for testing
+const idempotencyStore = new Map<string, { response: any; hash: string; vaultId?: string }>()
+
+export const resetIdempotencyStore = (): void => {
+  idempotencyStore.clear()
+}
+
+export const getIdempotentResponse = async <T>(key: string, hash: string): Promise<T | null> => {
+  const stored = idempotencyStore.get(key)
+  if (stored && stored.hash === hash) {
+    return stored.response as T
+  }
+  return null
+}
+
+export const saveIdempotentResponse = async (key: string, hash: string, vaultId: string, response: any): Promise<void> => {
+  idempotencyStore.set(key, { response, hash, vaultId })
+}
+
+export const hashRequestPayload = (payload: any): string => {
+  return JSON.stringify(payload)
+}
+
+export class IdempotencyConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'IdempotencyConflictError'
+  }
+}
