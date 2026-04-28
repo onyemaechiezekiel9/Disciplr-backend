@@ -86,8 +86,12 @@ export const resetIdempotencyStore = (): void => {
 
 export const getIdempotentResponse = async <T>(key: string, hash: string): Promise<T | null> => {
   const stored = idempotencyStore.get(key)
-  if (stored && stored.hash === hash) {
-    return stored.response as T
+  if (stored) {
+    if (stored.hash === hash) {
+      return stored.response as T
+    } else {
+      throw new IdempotencyConflictError('Idempotency key already used with a different request')
+    }
   }
   return null
 }

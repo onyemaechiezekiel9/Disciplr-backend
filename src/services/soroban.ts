@@ -62,7 +62,7 @@ export const defaultSorobanClient: SorobanClient = {
     const {
       Keypair,
       Contract,
-      SorobanRpc,
+      rpc: SorobanRpc,
       Networks,
       TransactionBuilder,
       nativeToScVal,
