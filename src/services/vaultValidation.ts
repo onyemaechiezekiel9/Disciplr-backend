@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { utcTimestampSchema } from '../lib/validation.js'
 export { flattenZodErrors } from '../lib/validation.js'
 
 // ─── Soroban-aligned constants ───────────────────────────────────────────────
@@ -43,10 +44,6 @@ const amountStringSchema = z.preprocess(
     ),
 )
 
-const isoTimestampSchema = z
-  .string({ message: 'required' })
-  .refine((v) => !isNaN(Date.parse(v)), 'must be a valid ISO timestamp')
-
 // ─── Milestone schema ────────────────────────────────────────────────────────
 
 const milestoneSchema = z.object({
@@ -54,7 +51,7 @@ const milestoneSchema = z.object({
     .string({ message: 'is required' })
     .refine((v) => v.trim().length > 0, 'is required'),
   description: z.string().optional(),
-  dueDate: isoTimestampSchema,
+  dueDate: utcTimestampSchema,
   amount: amountStringSchema,
 })
 
@@ -63,9 +60,9 @@ const milestoneSchema = z.object({
 export const createVaultSchema = z
   .object({
     amount: amountStringSchema,
-    startDate: isoTimestampSchema,
-    endDate: isoTimestampSchema,
-    verifier: z.string({ error: 'required' }).min(1, 'is required'),
+    startDate: utcTimestampSchema,
+    endDate: utcTimestampSchema,
+    verifier: stellarAddressSchema,
     destinations: z.object({
       success: stellarAddressSchema,
       failure: stellarAddressSchema,

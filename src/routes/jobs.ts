@@ -9,10 +9,10 @@ import {
 } from '../jobs/types.js'
 import { parseEnqueueOptions } from '../jobs/enqueueOptions.js'
 import { authenticate, authorize } from '../middleware/auth.js'
+import { requireJson } from '../middleware/requireJson.js'
 import { strictRateLimiter } from '../middleware/rateLimiter.js'
 import { createAuditLog } from '../lib/audit-logs.js'
-import { requireJson } from '../middleware/requireJson.js'
-import { formatValidationError } from '../lib/validation.js'
+import { formatValidationError, utcTimestampSchema } from '../lib/validation.js'
 
 // Helpers
 const requiredString = (field: string) => z.string().trim().min(1, `${field} is required`)
@@ -41,7 +41,7 @@ const enqueueSchema = z.discriminatedUnion('type', [
     payload: z.object({
       triggerSource: z.enum(['manual', 'scheduler']),
       vaultId: z.string().optional(),
-      deadlineIso: z.string().optional(),
+      deadlineIso: utcTimestampSchema.optional(),
     }),
     ...enqueueOptionsSchema,
   }),
@@ -135,10 +135,7 @@ export const createJobsRouter = (jobSystem: BackgroundJobSystem, options: JobsRo
 
     try {
       const { payload, type } = parseResult.data
-      const options: EnqueueOptions = parseEnqueueOptions({
-        delayMs: parseResult.data.delayMs,
-        maxAttempts: parseResult.data.maxAttempts,
-      })
+      const options: EnqueueOptions = parseEnqueueOptions(parseResult.data)
       const queuedJob = enqueueTypedJob(jobSystem, type, payload as JobPayloadByType[JobType], options)
       
       createAuditLog({
