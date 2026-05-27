@@ -85,6 +85,14 @@ export class AppError extends Error {
   static unprocessable(message: string) {
     return new AppError(422, ErrorCode.UNPROCESSABLE, message)
   }
+
+  static rateLimited(message = 'Too many requests') {
+    return new AppError(429, ErrorCode.RATE_LIMITED, message)
+  }
+
+  static payloadTooLarge(message = 'Payload too large') {
+    return new AppError(413, ErrorCode.PAYLOAD_TOO_LARGE, message)
+  }
 }
 
 // ─── Express error-handler middleware ────────────────────────────────────────
