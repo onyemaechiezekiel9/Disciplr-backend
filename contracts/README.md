@@ -52,12 +52,22 @@ their lifecycle.
 
 The `VaultStatus` enum (`Draft`/`Active`/`Completed`/`Failed`/`Cancelled`)
 mirrors `PersistedVault.status` in `src/types/vaults.ts`. Emitted events
-(`vault_created`, `vault_staked`, `milestone_checked_in`, `vault_slashed`,
+(`vault_created`, `vault_staked`, `vault_funded`, `milestone_checked_in`, `vault_slashed`,
 `vault_completed`, `vault_cancelled`, `vault_withdrawn`) align with the topics
 consumed by the backend event parser.
 
-**Error Handling and Backend Recoverability:**
-Contract read operations (like `get_vault`) and state transitions (`stake`, `check_in`, `claim`) safely return `Error::NotInitialized` rather than panicking when a `vault_id` is unset in storage. The backend's `src/middleware/errorHandler.ts` relies on this typed error mapping (specifically to `ErrorCode.NOT_FOUND` with status code 404) to gracefully recover from pre-initialization read attempts.
+### Event reference
+
+| Event | Topics | Data | Notes |
+|---|---|---|---|
+| `vault_created` | `(vault_created, creator)` | `amount` | Emitted by `create_vault`. |
+| `vault_staked` | `(vault_staked, from)` | `amount` | Legacy funding event; preserved for backward-compatible listeners. |
+| `vault_funded` | `(vault_funded, token, from)` | `net_staked_amount` | Rich funding event emitted alongside `vault_staked`. Carries the SEP-41 token address so `eventParser.ts` can reconcile the contract address without a separate Horizon query. |
+| `milestone_checked_in` | `(milestone_checked_in, caller, source)` | `milestone_index` | `source` is `"verifier"` or `"oracle"`. |
+| `vault_slashed` | `(vault_slashed, failure_destination)` | `slashed_amount` | Emitted by `slash_on_miss`. |
+| `vault_completed` | `(vault_completed, success_destination)` | `released_amount` | Emitted by `claim`. |
+| `vault_cancelled` | `(vault_cancelled, creator)` | `0` | Emitted by `cancel_vault` or `withdraw` on Draft. |
+| `vault_withdrawn` | `(vault_withdrawn, creator)` | `refunded_amount` | Emitted by `withdraw` on Active. |
 
 ## Build & test
 
