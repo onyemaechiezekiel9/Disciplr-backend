@@ -24,19 +24,50 @@ Implements the vault lifecycle that the backend models off-chain in
 
 | Function | Purpose |
 |---|---|
-| `create_vault` | Create a `Draft` vault with milestones, verifier, and success/failure destinations. Validates amount, deadline, and that milestone amounts sum to the total. |
+| `init` | Initialize the deployment admin that manages instance-level policy. Must be called once before allowlist administration. |
+| `set_admin` | Rotate the deployment admin. Only the current admin may call this. |
+| `set_allowed_token` | Add or remove a SEP-41 token contract from the instance-level allowlist used for new vaults. |
+| `is_allowed_token` | Read whether a token contract is currently allowed for new vault creation. |
+| `create_vault` | Create a `Draft` vault with milestones, verifier, token, and success/failure destinations. Validates amount, deadline, milestone sums, and that the requested token is allowlisted. |
 | `stake` | Creator transfers the SEP-41 token into the contract; `Draft` -> `Active`. |
 | `check_in` | Designated verifier confirms a milestone before its `due_date`. |
 | `slash_on_miss` | After the deadline with unverified milestones, slash funds to `failure_destination`; `Active` -> `Failed`. |
 | `claim` | When all milestones are verified, release funds to `success_destination`; `Active` -> `Completed`. |
 | `withdraw` | Cancel/refund an unfunded or unstarted vault to the creator; -> `Cancelled`. |
 | `get_vault` | Read-only accessor for the current vault record. |
+| `get_unverified_milestone_indices` | Returns `Vec<u32>` of indices for milestones that have not yet been verified, in ascending order. Used by the keeper job (`src/jobs/handlers.ts`) to determine slash targets without loading and filtering the full vault client-side. |
+
+### Token allowlist policy
+
+`accountability_vault` enforces a deployment-wide token allowlist at vault
+creation time. The admin initializes the contract with `init`, then uses
+`set_allowed_token(admin, token, true)` to permit curated SEP-41 token
+contracts (for example an XLM SAC or approved USDC contract) and
+`set_allowed_token(admin, token, false)` to remove them. `create_vault` checks
+the selected token against the instance-level `AllowedToken(token)` storage
+entry and returns `Error::TokenNotAllowed` when the token is absent or has been
+removed. Removing a token only blocks future vault creation; existing vault
+records retain their configured token so already-created vaults can continue
+their lifecycle.
 
 The `VaultStatus` enum (`Draft`/`Active`/`Completed`/`Failed`/`Cancelled`)
 mirrors `PersistedVault.status` in `src/types/vaults.ts`. Emitted events
-(`vault_created`, `vault_staked`, `milestone_checked_in`, `vault_slashed`,
+(`vault_created`, `vault_staked`, `vault_funded`, `milestone_checked_in`, `vault_slashed`,
 `vault_completed`, `vault_cancelled`, `vault_withdrawn`) align with the topics
 consumed by the backend event parser.
+
+### Event reference
+
+| Event | Topics | Data | Notes |
+|---|---|---|---|
+| `vault_created` | `(vault_created, creator)` | `amount` | Emitted by `create_vault`. |
+| `vault_staked` | `(vault_staked, from)` | `amount` | Legacy funding event; preserved for backward-compatible listeners. |
+| `vault_funded` | `(vault_funded, token, from)` | `net_staked_amount` | Rich funding event emitted alongside `vault_staked`. Carries the SEP-41 token address so `eventParser.ts` can reconcile the contract address without a separate Horizon query. |
+| `milestone_checked_in` | `(milestone_checked_in, caller, source)` | `milestone_index` | `source` is `"verifier"` or `"oracle"`. |
+| `vault_slashed` | `(vault_slashed, failure_destination)` | `slashed_amount` | Emitted by `slash_on_miss`. |
+| `vault_completed` | `(vault_completed, success_destination)` | `released_amount` | Emitted by `claim`. |
+| `vault_cancelled` | `(vault_cancelled, creator)` | `0` | Emitted by `cancel_vault` or `withdraw` on Draft. |
+| `vault_withdrawn` | `(vault_withdrawn, creator)` | `refunded_amount` | Emitted by `withdraw` on Active. |
 
 ## Build & test
 
@@ -56,6 +87,7 @@ To prevent accidental bloat in the smart contract, the `accountability_vault` in
 The default limit is set to **100,000 bytes** (~100KB).
 
 If you need to update this budget as the contract grows:
+
 1. Temporarily increase the budget locally by exporting the variable: `export MAX_WASM_SIZE=150000`
 2. Update the default value in `contracts/build-size-check.sh`
 3. Push the changes to update the CI limit.
@@ -204,3 +236,12 @@ export class SorobanService {
 (`src/services/horizonListener.ts`) and `src/services/eventParser.ts`
 ingest the events emitted by these functions to keep the off-chain vault state
 in sync.
+
+## Internal Helpers
+
+The contract includes several optimized internal helper functions to guarantee security, modularity, and easy auditability:
+
+| Helper | Purpose |
+|---|---|
+| `assert_active(&Vault)` | Centralizes repeated state validation checks for `Active` vaults in `slash_on_miss`, `claim`, and `withdraw`, making future status lifecycle additions single-point-of-change updates. |
+
