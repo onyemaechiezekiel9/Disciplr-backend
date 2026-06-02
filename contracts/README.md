@@ -24,7 +24,7 @@ Implements the vault lifecycle that the backend models off-chain in
 
 | Function | Purpose |
 |---|---|
-| `create_vault` | Create a `Draft` vault with milestones, verifier, and success/failure destinations. Validates amount, deadline, and that milestone amounts sum to the total. |
+| `create_vault` | Create a `Draft` vault with milestones, verifier, and success/failure destinations. Validates amount, deadline, that milestone amounts sum to the total, and rejects obviously-degenerate salt/vault_id values (all-zero or all-ones `BytesN<32>`). |
 | `stake` | Creator transfers the SEP-41 token into the contract; `Draft` -> `Active`. |
 | `check_in` | Designated verifier confirms a milestone before its `due_date`. |
 | `slash_on_miss` | After the deadline with unverified milestones, slash funds to `failure_destination`; `Active` -> `Failed`. |
