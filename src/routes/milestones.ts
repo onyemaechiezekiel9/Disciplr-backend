@@ -8,11 +8,14 @@ import {
   verifyMilestone,
   validateMilestone,
   allMilestonesVerified,
+  allMilestonesMetThreshold,
 } from '../services/milestones.js'
 import {
   recordMilestoneApproval,
   hasVerifierVoted,
   getMilestoneApprovalProgress,
+  getApprovedVerifiersCount,
+  getMilestoneApprovals,
   hasMilestoneMetThreshold,
   DuplicateVerifierVoteError,
 } from '../services/verifiers.js'
@@ -167,26 +170,47 @@ milestonesRouter.post('/:id/approve', authenticate, requireVerifier, async (req:
       return next(AppError.conflict('Verifier has already voted on this milestone'))
     }
 
+    // Reject late votes on already-settled milestones
+    const milestone_record = getMilestoneById(id)
+    const approvalThreshold = (milestone_record as any)?.approvalThreshold || 1
+    const totalVerifiers = (milestone_record as any)?.totalVerifiers as number | undefined
+
+    const priorProgress = await getMilestoneApprovalProgress(id, approvalThreshold, totalVerifiers)
+    if (priorProgress.isComplete || priorProgress.isRejected) {
+      return next(AppError.conflict('Milestone is already settled'))
+    }
+
     // Record the approval
     const approval = await recordMilestoneApproval(id, verifierUserId, approvalStatus as any)
 
     // Get updated approval progress
-    const milestone_record = getMilestoneById(id)
-    const approvalThreshold = (milestone_record as any)?.approvalThreshold || 1
-    const approvalProgress = await getMilestoneApprovalProgress(id, approvalThreshold)
+    const approvalProgress = await getMilestoneApprovalProgress(id, approvalThreshold, totalVerifiers)
 
-    // Check if milestone should be completed (if all approvals met and no rejections)
+    // Settle milestone state
     let milestoneCompleted = false
     let vaultCompleted = false
 
-    if (approvalProgress.isComplete && !approvalProgress.isRejected) {
+    if (approvalProgress.isComplete) {
       milestoneCompleted = true
       milestone.verified = true
       milestone.verifiedAt = new Date().toISOString()
       milestone.verifiedBy = verifierUserId
 
-      // Check if all vault milestones are now verified
-      if (allMilestonesVerified(vaultId) && vault.status === 'active') {
+      // Build approval/rejection counts for veto-aware vault check
+      const vaultMilestones = getMilestonesByVaultId(vaultId)
+      const approvalCounts: Record<string, number> = {}
+      const rejectionCounts: Record<string, number> = {}
+      const totalVerifierCounts: Record<string, number> = {}
+
+      await Promise.all(vaultMilestones.map(async (m) => {
+        const votes = await getMilestoneApprovals(m.id)
+        approvalCounts[m.id] = votes.approved.length
+        rejectionCounts[m.id] = votes.rejected.length
+        const n = (m as any).totalVerifiers as number | undefined
+        if (n !== undefined) totalVerifierCounts[m.id] = n
+      }))
+
+      if (allMilestonesMetThreshold(vaultId, approvalCounts, rejectionCounts, totalVerifierCounts) && vault.status === 'active') {
         const result = completeVault(vaultId)
         vaultCompleted = result.success
       }
