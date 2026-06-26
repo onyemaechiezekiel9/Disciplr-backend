@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { requireAdmin } from '../middleware/rbac.js'
 import { queryParser } from '../middleware/queryParser.js'
 import { authenticate } from '../middleware/auth.js'
+import { requireStepUp } from '../middleware/stepUp.js'
 import { metricsRateLimiter } from '../middleware/rateLimiter.js'
 import { UserRole, UserStatus } from '../types/user.js'
 import { userService, DeleteResult } from '../services/user.service.js'
@@ -282,7 +283,7 @@ adminRouter.post('/horizon/listener/reset-cursor', async (req: Request, res: Res
  * Force-logout a user (Admin only) - Preserve Issue #46 logic
  * Force-logout a user (Admin only) - Issue #46 logic preserved
  */
-adminRouter.post('/users/:userId/revoke-sessions', async (req: Request, res: Response) => {
+adminRouter.post('/users/:userId/revoke-sessions', requireStepUp(), async (req: Request, res: Response) => {
   const { userId } = req.params
   
   if (!userId) {
@@ -372,7 +373,7 @@ adminRouter.get('/audit-logs/:id', async (req, res) => {
   }
 })
 
-adminRouter.post('/overrides/vaults/:id/cancel', async (req, res) => {
+adminRouter.post('/overrides/vaults/:id/cancel', requireStepUp(), async (req, res) => {
   const { id } = req.params
   const { reason, reasonCode, idempotencyKey, details } = req.body ?? {}
 
