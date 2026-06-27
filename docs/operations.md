@@ -297,3 +297,9 @@ If `REDIS_URL` is not provided (e.g., during tests or local development), the ca
 ### Serialization & Schema Updates
 
 To prevent stale-shaped objects from causing schema mismatch issues, all cached payloads are explicitly version-tagged (e.g., `{"version":"v1","data":...}`). Any version change triggers an automatic cache miss, ensuring that updated structures are always loaded fresh from the database.
+
+## Runbooks
+
+| Scenario | Runbook |
+|---|---|
+| Horizon listener stalls; slash backlog builds | [horizon-stall.md](runbooks/horizon-stall.md) |
