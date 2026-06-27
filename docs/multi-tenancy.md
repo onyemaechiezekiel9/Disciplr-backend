@@ -204,3 +204,5 @@ Response `200`:
 
 Migration: `db/migrations/20260602120001_create_org_invitations.cjs`
 Revocation migration: `db/migrations/20260627000000_add_revoked_at_to_org_invitations.cjs`
+
+See also: [Tenant isolation threat model](./security/tenant-isolation-threat-model.md)
